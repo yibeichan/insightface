@@ -3,6 +3,11 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+*output/
+*data/
+*index.bin
+*faces_emore
+*otf
 # C extensions
 *.so
 
