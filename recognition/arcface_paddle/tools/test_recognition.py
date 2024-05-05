@@ -41,67 +41,21 @@ def parser(add_help=True):
         return v.lower() in ("true", "t", "1")
 
     parser = argparse.ArgumentParser(add_help=add_help)
-    parser.add_argument(
-        "--det", action="store_true", help="Whether to detect.")
-    parser.add_argument(
-        "--rec", action="store_true", help="Whether to recognize.")
-    
-    parser.add_argument(
-        "--det_model",
-        type=str,
-        default="BlazeFace",
-        help="The detection model.")
-    parser.add_argument(
-        "--rec_model",
-        type=str,
-        default="MobileFace",
-        help="The recognition model.")
-    parser.add_argument(
-        "--use_gpu",
-        type=str2bool,
-        default=True,
-        help="Whether use GPU to predict. Default by True.")
-    parser.add_argument(
-        "--enable_mkldnn",
-        type=str2bool,
-        default=True,
-        help="Whether use MKLDNN to predict, valid only when --use_gpu is False. Default by False."
-    )
-    parser.add_argument(
-        "--cpu_threads",
-        type=int,
-        default=1,
-        help="The num of threads with CPU, valid only when --use_gpu is False. Default by 1."
-    )
-    parser.add_argument(
-        "--input",
-        type=str,
-        help="The path or directory of image(s) or video to be predicted.")
-    parser.add_argument(
-        "--output", type=str, default="./output/", help="The directory of prediction result.")
-    parser.add_argument(
-        "--det_thresh",
-        type=float,
-        default=0.8,
-        help="The threshold of detection postprocess. Default by 0.8.")
-    parser.add_argument(
-        "--index", type=str, default=None, help="The path of index file.")
-    parser.add_argument(
-        "--cdd_num",
-        type=int,
-        default=5,
-        help="The number of candidates in the recognition retrieval. Default by 10."
-    )
-    parser.add_argument(
-        "--rec_thresh",
-        type=float,
-        default=0.45,
-        help="The threshold of recognition postprocess. Default by 0.45.")
-    parser.add_argument(
-        "--max_batch_size",
-        type=int,
-        default=1,
-        help="The maxium of batch_size to recognize. Default by 1.")
+    parser.add_argument("--det", action="store_true", help="Whether to detect.")
+    parser.add_argument("--rec", action="store_true", help="Whether to recognize.")
+    parser.add_argument("--det_model", type=str, default="BlazeFace", help="The detection model.")
+    parser.add_argument("--rec_model", type=str, default="MobileFace", help="The recognition model.")
+    parser.add_argument("--use_gpu", type=str2bool, default=True, help="Whether use GPU to predict.")
+    parser.add_argument("--enable_mkldnn", type=str2bool, default=False, help="Use MKLDNN for prediction, only when not using GPU.")
+    parser.add_argument("--cpu_threads", type=int, default=1, help="Number of CPU threads to use.")
+    parser.add_argument("--input", type=str, help="Path or directory of images or video to be processed.")
+    parser.add_argument("--output", type=str, default="./output/", help="Directory for the prediction results.")
+    parser.add_argument("--det_thresh", type=float, default=0.8, help="Threshold for detection postprocessing.")
+    parser.add_argument("--index", type=str, default=None, help="Path of index file for recognition.")
+    parser.add_argument("--cdd_num", type=int, default=6, help="Number of candidates for recognition retrieval.")
+    parser.add_argument("--rec_thresh", type=float, default=0.45, help="Threshold for recognition postprocessing.")
+    parser.add_argument("--max_batch_size", type=int, default=1, help="Maximum batch size for recognition.")
+    parser.add_argument("--save_txt", action='store_true', help="Whether to save detection results to text files.")
 
     return parser
 
@@ -392,6 +346,37 @@ class VideoWriter(object):
             self.writer.release()
 
 
+class TextWriter:
+    def __init__(self, output_dir, mode='w'):
+        super().__init__()
+        if not output_dir:
+            raise ValueError("Output directory must be specified with the '--output' option.")
+
+        self.output_dir = os.path.abspath(output_dir)
+        if not os.path.exists(self.output_dir):
+            os.makedirs(self.output_dir, exist_ok=True)
+            logging.info(f"Created output directory at {self.output_dir}")
+        self.mode = mode
+
+    def write_detection(self, file_name, detections, labels):
+    
+        """
+        Writes detection data to a specific file, managing file operations independently.
+
+        :param file_name: Name of the file to write detections.
+        :param detections: List of detection data.
+        :param labels: Corresponding labels for detections.
+        """
+        full_path = os.path.join(self.output_dir, file_name)
+        try:
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)  # Ensure the directory exists
+            with open(full_path, self.mode) as file:
+                for dt, label in zip(detections, labels):
+                    x1, y1, x2, y2, confidence = dt[2], dt[3], dt[4], dt[5], dt[1]
+                    file.write(f"{int(x1)}, {int(y1)}, {int(x2)}, {int(y2)}, {confidence}, {label}\n")
+        except IOError as e:
+            logging.error(f"Failed to write detection to file {full_path}: {e}")
+
 class BasePredictor(object):
     def __init__(self, predictor_config):
         super().__init__()
@@ -435,7 +420,6 @@ class BasePredictor(object):
 
     def predict(self, img):
         raise NotImplementedError
-
 
 class Detector(BasePredictor):
     def __init__(self, det_config, predictor_config):
@@ -483,7 +467,6 @@ class Detector(BasePredictor):
         # np_boxes_num = boxes_num.copy_to_cpu()
         box_list = self.postprocess(np_boxes)
         return box_list
-
 
 class Recognizer(BasePredictor):
     def __init__(self, rec_config, predictor_config):
@@ -570,9 +553,10 @@ class InsightFace(object):
         if print_info:
             print_config(args)
 
-        self.font_path = os.path.join(
-            os.path.abspath(os.path.dirname(__file__)),
-            "SourceHanSansCN-Medium.otf")
+        # self.font_path = os.path.join(
+        #     os.path.abspath(os.path.dirname(__file__)),
+        #     "SourceHanSansCN-Medium.otf")
+        self.font_path = "/om2/user/yibei/insightface/recognition/arcface_paddle/SourceHanSansCN-Medium.otf"
         self.args = args
 
         predictor_config = {
@@ -624,7 +608,8 @@ class InsightFace(object):
 
             text = "{} {:.4f}".format(label, score)
             th = sum(font.getmetrics())
-            tw = font.getsize(text)[0]
+            bbox = font.getbbox(text)  # Get the bounding box for the text
+            tw = bbox[2] - bbox[0]  # Width of the text from the bounding box
             start_y = max(0, ymin - th)
 
             draw.rectangle(
@@ -669,40 +654,46 @@ class InsightFace(object):
             )
 
     def predict(self, input_data, print_info=False):
-        """Predict input_data.
-
-        Args:
-            input_data (str | NumPy.array): The path of image, or the derectory including images, or the image data in NumPy.array format.
-            print_info (bool, optional): Wheather to print the prediction results. Defaults to False.
-
-        Yields:
-            dict: {
-                "box_list": The prediction results of detection.
-                "features": The output of recognition.
-                "labels": The results of retrieval.
-                }
-        """
         self.init_reader_writer(input_data)
+        save_text = self.args.save_txt  # This assumes args has been parsed and includes save_txt
+        if save_text:
+            text_writer = TextWriter(self.args.output)
+
+        frame_number = 0
+
         for img, file_name in self.input_reader:
             if img is None:
                 logging.warning(f"Error in reading img {file_name}! Ignored.")
                 continue
+            
+            print("Input Image Shape:", img.shape)
             box_list, np_feature = self.predict_np_img(img)
             if np_feature is not None:
                 labels = self.rec_predictor.retrieval(np_feature)
             else:
                 labels = ["face"] * len(box_list)
+
             if box_list is not None:
                 result = self.draw(img, box_list, labels=labels)
                 self.output_writer.write(result, file_name)
+
+                if save_text and len(box_list) > 0:
+                    txt_filename = f"{os.path.splitext(file_name)[0]}_frame_{frame_number}_detections.txt" if isinstance(self.input_reader, VideoReader) else f"{os.path.splitext(file_name)[0]}_detections.txt"
+                    text_writer.write_detection(txt_filename, box_list, labels)
+
             if print_info:
                 logging.info(f"File: {file_name}, predict label(s): {labels}")
+
+            if isinstance(self.input_reader, VideoReader):
+                frame_number += 1
+
             yield {
                 "box_list": box_list,
                 "features": np_feature,
                 "labels": labels
             }
-        logging.info(f"Predict complete!")
+
+        logging.info("Predict complete!")
 
 
 # for CLI
