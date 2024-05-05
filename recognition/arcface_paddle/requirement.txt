@@ -4,12 +4,11 @@ pillow
 numpy
 easydict
 scipy
-sklearn
 requests
 prettytable
 tqdm
 Pillow
-scikit-learn==0.23.2
+scikit-learn
 opencv-python==4.4.0.46
 onnxruntime
 onnx
