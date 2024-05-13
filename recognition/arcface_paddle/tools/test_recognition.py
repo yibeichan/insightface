@@ -510,19 +510,22 @@ class Recognizer(BasePredictor):
     def retrieval(self, np_feature):
         labels = []
         for feature in np_feature:
-            similarity = cosine_similarity(self.index_feature,
-                                           feature).squeeze()
+            similarity = cosine_similarity(self.index_feature, feature).squeeze()
+            print(f"Debug: Similarity scores - {similarity}")  # Debugging statement
+            
             abs_similarity = np.abs(similarity)
-            candidate_idx = np.argpartition(abs_similarity,
-                                            -self.cdd_num)[-self.cdd_num:]
+            candidate_idx = np.argpartition(abs_similarity, -self.cdd_num)[-self.cdd_num:]
             remove_idx = np.where(abs_similarity[candidate_idx] < self.thresh)
             candidate_idx = np.delete(candidate_idx, remove_idx)
+            
             candidate_label_list = list(np.array(self.label)[candidate_idx])
+            print(f"Debug: Candidate labels - {candidate_label_list}")  # Debugging statement
+
             if len(candidate_label_list) == 0:
-                maxlabel = ""
+                maxlabel = "unknown"  # Fallback to 'unknown' instead of empty
             else:
-                maxlabel = max(candidate_label_list,
-                               key=candidate_label_list.count)
+                maxlabel = max(candidate_label_list, key=candidate_label_list.count)
+            
             labels.append(maxlabel)
         return labels
 
@@ -666,17 +669,16 @@ class InsightFace(object):
                 logging.warning(f"Error in reading img {file_name}! Ignored.")
                 continue
             
-            print("Input Image Shape:", img.shape)
             box_list, np_feature = self.predict_np_img(img)
             if np_feature is not None:
                 labels = self.rec_predictor.retrieval(np_feature)
             else:
-                labels = ["face"] * len(box_list)
+                labels = ["unknown"] * len(box_list)
 
             if box_list is not None:
                 result = self.draw(img, box_list, labels=labels)
                 self.output_writer.write(result, file_name)
-
+                
                 if save_text and len(box_list) > 0:
                     txt_filename = f"{os.path.splitext(file_name)[0]}_frame_{frame_number}_detections.txt" if isinstance(self.input_reader, VideoReader) else f"{os.path.splitext(file_name)[0]}_detections.txt"
                     text_writer.write_detection(txt_filename, box_list, labels)
